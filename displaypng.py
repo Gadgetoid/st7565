@@ -8,9 +8,11 @@ import numpy
 import png
 import math
 
-W = 128
-H = 64
-PS = 8
+W = 128  # Display Width
+H = 64   # Display Height
+PS = 8   # Display Page Size
+
+DELAY = 2  # In seconds
 
 IMG = []
 
@@ -53,12 +55,14 @@ def main():
     files = glob.glob('*.png')
     for f in files:
         load_png(f)
+
+    fifo = open('/tmp/st7565','w')  
     while True:
         for i in IMG:
-            fifo = open('/tmp/st7565','w')  
             fifo.write("".join([chr(c) for c in i]))
             fifo.flush()
-            fifo.close()
-            time.sleep(1.0)
+            time.sleep(DELAY)
+
+    fifo.close()
 
 main()

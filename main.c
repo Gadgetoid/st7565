@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <pthread.h>
+#include <signal.h>
 #include "main.h"
 
 #define SPI_SPEED_HZ 2500000
@@ -20,16 +22,52 @@
 #define PIN_RST     17
 #define PIN_A       27
 
-#define FRAME_TIME 10000   // Microseconds
+#define FRAME_TIME 9500   // Microseconds
 
 #define CMD_SET_PAGE 0xb0
 #define CMD_SET_COLUMN_UPPER 0x10
 #define CMD_SET_COLUMN_LOWER 0x00
 #define ST7565_STARTBYTES 1
 
+int frame_time = FRAME_TIME;
 unsigned char buf[BUF_SIZE];
+int running = 0;
+pthread_t pt_redraw;
+
+void *redraw_loop(void *param){
+  running = 1;
+
+  int col = 0;
+  struct timeval t_start, t_end;
+  double msec;
+ 
+  while( running ){
+
+    for(col = 0; col < 3; col++){
+        gettimeofday(&t_start, NULL);
+        lcd_display(col);
+        gettimeofday(&t_end, NULL);
+        msec = msec = (double)(t_end.tv_usec - t_start.tv_usec) / 1000000 + (double)(t_end.tv_sec - t_start.tv_sec);
+        delayMicroseconds(frame_time - msec);
+        //delayMicroseconds(1000000);
+    }
+
+  }
+  return NULL;
+}
+
+void sigintHandler(int sig_num){
+  running = 0;
+  pthread_join(pt_redraw, NULL);
+  exit(1);
+}
 
 int main(int argc, char *argv[]){
+  if( argc > 1 ){
+    sscanf(argv[1], "%i", &frame_time);
+  }
+
+  signal(SIGINT, sigintHandler);
   wiringPiSetupGpio();
   pinMode(PIN_CS, OUTPUT);
   pinMode(PIN_RST, OUTPUT);
@@ -59,12 +97,10 @@ int main(int argc, char *argv[]){
   mkfifo(lcd_fifo, 0777);
   //int fd = open("/dev/urandom", O_RDONLY);
   int fd = open(lcd_fifo, O_RDONLY);
-  int col = 0;
-  struct timeval t_start, t_end;
-  double msec;
-  /*while(read(fd, buf, BUF_SIZE) == 0){
+ /*while(read(fd, buf, BUF_SIZE) == 0){
 
   }*/
+  pthread_create(&pt_redraw, NULL, redraw_loop, NULL);
   while(1){
     read(fd, buf, BUF_SIZE);
     /*memset(buf, 0b11000000, BUF_SIZE);
@@ -74,15 +110,9 @@ int main(int argc, char *argv[]){
     memset(buf, 0b11111100, BUF_SIZE);
     lcd_display();
     memset(buf, 0b11111111, BUF_SIZE);*/
-    for(col = 0; col < 3; col++){
-        gettimeofday(&t_start, NULL);
-        lcd_display(col);
-        gettimeofday(&t_end, NULL);
-        msec = msec = (double)(t_end.tv_usec - t_start.tv_usec) / 1000000 + (double)(t_end.tv_sec - t_start.tv_sec);
-        delayMicroseconds(FRAME_TIME - msec);
-        //delayMicroseconds(1000000);
-    }
   }
+  running = 0;
+  pthread_join(pt_redraw, NULL);
   close(fd);
   unlink(lcd_fifo);
   return 0;
